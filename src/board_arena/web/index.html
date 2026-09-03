@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM 棋类竞技场</title>
+<style>
+  :root {
+    --bg: #12141c; --panel: #1b1e2b; --panel2: #232636; --line: #323750;
+    --text: #e6e8f0; --dim: #8b90a5; --accent: #6c8cff; --good: #4ecf8a;
+    --bad: #ff7a7a; --warn: #ffc46b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+  header { padding: 14px 22px; border-bottom: 1px solid var(--line);
+           display: flex; align-items: baseline; gap: 18px; }
+  header h1 { font-size: 19px; margin: 0; }
+  header .sub { color: var(--dim); font-size: 13px; }
+  nav { display: flex; gap: 4px; padding: 10px 22px 0; }
+  nav button { background: none; border: 1px solid transparent; color: var(--dim);
+               padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 8px 8px 0 0; }
+  nav button.active { color: var(--text); background: var(--panel);
+                      border-color: var(--line); border-bottom-color: var(--panel); }
+  main { margin: 0 22px 30px; background: var(--panel); border: 1px solid var(--line);
+         border-radius: 0 10px 10px 10px; padding: 18px; }
+  .row { display: flex; gap: 18px; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: var(--panel2); border: 1px solid var(--line);
+           border-radius: 8px; padding: 12px 14px; }
+  .panel h3 { margin: 0 0 10px; font-size: 14px; color: var(--dim); font-weight: 600; }
+  label { font-size: 13px; color: var(--dim); display: block; margin: 6px 0 3px; }
+  select, input { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+                  border-radius: 6px; padding: 6px 9px; font-size: 13px; }
+  button.primary { background: var(--accent); border: none; color: #fff;
+                   padding: 9px 20px; border-radius: 7px; font-size: 14px; cursor: pointer; }
+  button.primary:disabled { opacity: .45; cursor: default; }
+  button.ghost { background: none; border: 1px solid var(--line); color: var(--text);
+                 padding: 6px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+  #board { background: #2a2418; border-radius: 6px; }
+  #movelog { height: 380px; overflow-y: auto; font-size: 13px; line-height: 1.75;
+             font-family: Consolas, monospace; }
+  #movelog .illegal { color: var(--bad); }
+  #movelog .sys { color: var(--dim); }
+  #movelog .mv b { color: var(--accent); }
+  #status { font-size: 15px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 10px;
+           font-size: 12px; background: var(--bg); border: 1px solid var(--line); }
+  .badge.thinking { color: var(--warn); border-color: var(--warn); }
+  .badge.over { color: var(--good); border-color: var(--good); }
+  table.stats { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.stats th, table.stats td { padding: 8px 12px; border-bottom: 1px solid var(--line);
+                                   text-align: center; }
+  table.stats th { color: var(--dim); font-weight: 600; font-size: 12.5px; }
+  table.stats td:first-child { text-align: left; font-weight: 600; }
+  table.stats tr:hover td { background: var(--bg); }
+  .gamelist div { padding: 8px 10px; border-bottom: 1px solid var(--line);
+                  cursor: pointer; font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px;}
+  .gamelist div:hover { background: var(--bg); }
+  .gamelist div.sel { background: var(--bg); border-left: 3px solid var(--accent); }
+  .gamelist .res { color: var(--good); }
+  #replaybar { display: flex; align-items: center; gap: 10px; }
+  #replaybar input[type=range] { flex: 1; }
+  #moverep { font-family: Consolas, monospace; font-size: 13px; color: var(--dim);
+             min-height: 40px; }
+  .muted { color: var(--dim); font-size: 13px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LLM 棋类竞技场</h1>
+  <span class="sub">大模型对弈围棋 / 中国象棋 · 实时观战 · 复盘回放 · 战绩榜</span>
+</header>
+<nav>
+  <button data-tab="live" class="active">对战</button>
+  <button data-tab="replay">复盘</button>
+  <button data-tab="stats">战绩榜</button>
+</nav>
+
+<main>
+  <!-- ================= 实时对战 ================= -->
+  <section id="tab-live">
+    <div class="row">
+      <div class="col" style="flex:0 0 250px">
+        <div class="panel">
+          <h3>对局设置</h3>
+          <label>棋种</label>
+          <select id="game-sel" style="width:100%">
+            <option value="go">围棋(19路)</option>
+            <option value="go9">围棋(9路,调试)</option>
+            <option value="xiangqi">中国象棋</option>
+          </select>
+          <div id="side-pickers">
+            <label id="p1-label">黑方引擎</label>
+            <select id="p1" style="width:100%"></select>
+            <label id="p2-label">白方引擎</label>
+            <select id="p2" style="width:100%"></select>
+          </div>
+          <div style="margin-top:14px">
+            <button class="primary" id="btn-start" style="width:100%">开始对局</button>
+          </div>
+          <div class="muted" style="margin-top:8px" id="engine-hint"></div>
+        </div>
+        <div class="panel" style="flex:1">
+          <h3>对局日志</h3>
+          <div id="status"><span class="badge" id="status-badge">待开局</span>
+            <span id="status-text" class="muted"></span></div>
+          <div id="movelog"></div>
+        </div>
+      </div>
+      <div class="col" style="flex:1; align-items:center">
+        <canvas id="board" width="640" height="640"></canvas>
+        <div class="muted" id="result-line"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 复盘回放 ================= -->
+  <section id="tab-replay" class="hidden">
+    <div class="row">
+      <div class="col" style="flex:0 0 300px">
+        <div class="panel" style="flex:1">
+          <h3>对局列表</h3>
+          <div class="gamelist" id="gamelist"><div class="muted">加载中…</div></div>
+        </div>
+      </div>
+      <div class="col" style="flex:1; align-items:center">
+        <canvas id="rboard" width="640" height="640"></canvas>
+        <div class="panel" style="width:640px">
+          <div id="replaybar">
+            <button class="ghost" id="rp-first">⏮</button>
+            <button class="ghost" id="rp-prev">◀</button>
+            <input type="range" id="rp-slider" min="0" max="0" value="0">
+            <button class="ghost" id="rp-next">▶</button>
+            <button class="ghost" id="rp-last">⏭</button>
+            <button class="ghost" id="rp-auto">自动播放</button>
+            <span class="muted" id="rp-pos">0/0</span>
+          </div>
+          <div id="moverep"></div>
+          <div id="rp-result" class="muted"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 战绩榜 ================= -->
+  <section id="tab-stats" class="hidden">
+    <div class="panel">
+      <h3 id="stats-title">战绩榜</h3>
+      <table class="stats" id="stats-table">
+        <thead><tr>
+          <th style="text-align:left">棋手</th><th>总局</th><th>胜</th><th>负</th>
+          <th>和</th><th>积分</th><th>胜率</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="muted" style="margin-top:8px">积分规则:胜 2 分,和 1 分。点击右上角刷新查看最新。</div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+// ============================ 公共 ============================
+const $ = id => document.getElementById(id);
+const GO_CHARS = {"X": "black", "O": "white", ".": null};
+const XQ_NAMES = {"K":"帅","A":"仕","E":"相","H":"马","R":"车","C":"炮","P":"兵",
+                  "k":"将","a":"士","e":"象","h":"马","r":"车","c":"炮","p":"卒"};
+
+function tabSwitch(name) {
+  document.querySelectorAll("nav button").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  ["live","replay","stats"].forEach(t =>
+    $("tab-" + t).classList.toggle("hidden", t !== name));
+  if (name === "replay") loadGameList();
+  if (name === "stats") loadStats();
+}
+document.querySelectorAll("nav button").forEach(b =>
+  b.addEventListener("click", () => tabSwitch(b.dataset.tab)));
+
+// ============================ 棋盘渲染 ============================
+function drawGo(canvas, snap, lastMove) {
+  const size = snap.size, ctx = canvas.getContext("2d");
+  const W = canvas.width, pad = W / (size + 1), cell = (W - 2 * pad) / (size - 1);
+  ctx.clearRect(0, 0, W, W);
+  ctx.fillStyle = "#d8b56a"; ctx.fillRect(0, 0, W, W);
+  ctx.strokeStyle = "#5a4420"; ctx.lineWidth = 1;
+  for (let i = 0; i < size; i++) {
+    ctx.beginPath(); ctx.moveTo(pad, pad + i * cell); ctx.lineTo(W - pad, pad + i * cell); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad + i * cell, pad); ctx.lineTo(pad + i * cell, W - pad); ctx.stroke();
+  }
+  const letters = "ABCDEFGHJKLMNOPQRSTUVWXYZ";
+  let last = null;
+  if (lastMove && /^[A-HJ-T]\d{1,2}$/i.test(lastMove))
+    last = {x: letters.indexOf(lastMove[0].toUpperCase()),
+            y: size - parseInt(lastMove.slice(1))};
+  const r = cell * 0.47;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const c = GO_CHARS[snap.grid[y][x]];
+    if (!c) continue;
+    ctx.beginPath();
+    ctx.arc(pad + x * cell, pad + y * cell, r, 0, 7);
+    ctx.fillStyle = c === "black" ? "#111" : "#f5f5f5"; ctx.fill();
+    ctx.strokeStyle = c === "black" ? "#000" : "#888"; ctx.stroke();
+  }
+  if (last) {
+    ctx.beginPath(); ctx.arc(pad + last.x * cell, pad + last.y * cell, r * 0.35, 0, 7);
+    ctx.fillStyle = "#ff5a5a"; ctx.fill();
+  }
+}
+
+function drawXiangqi(canvas, snap, lastMove) {
+  const ctx = canvas.getContext("2d"), W = canvas.width;
+  const cols = 9, rows = 10, pad = W / (cols + 1);
+  const cell = (W - 2 * pad) / (cols - 1), vpad = pad * 0.85;
+  const vh = (W - 2 * vpad) / (rows - 1);
+  ctx.clearRect(0, 0, W, W);
+  ctx.fillStyle = "#d8b56a"; ctx.fillRect(0, 0, W, W);
+  ctx.strokeStyle = "#5a4420"; ctx.lineWidth = 1;
+  for (let y = 0; y < rows; y++) {
+    ctx.beginPath(); ctx.moveTo(pad, vpad + y * vh); ctx.lineTo(W - pad, vpad + y * vh); ctx.stroke();
+  }
+  for (let x = 0; x < cols; x++) {
+    if (x === 0 || x === cols - 1) {
+      ctx.beginPath(); ctx.moveTo(pad + x * cell, vpad); ctx.lineTo(pad + x * cell, W - vpad); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(pad + x * cell, vpad); ctx.lineTo(pad + x * cell, vpad + 4 * vh); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pad + x * cell, vpad + 5 * vh); ctx.lineTo(pad + x * cell, W - vpad); ctx.stroke();
+    }
+  }
+  // 九宫斜线
+  for (const [x1,y1,x2,y2] of [[3,0,5,2],[3,9,5,7]]) {
+    ctx.beginPath(); ctx.moveTo(pad + x1 * cell, vpad + y1 * vh);
+    ctx.lineTo(pad + x2 * cell, vpad + y2 * vh); ctx.stroke();
+  }
+  // 楚河汉界
+  ctx.font = `${cell * 0.55}px serif`; ctx.fillStyle = "rgba(90,68,32,.8)";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("楚  河", pad + 1.5 * cell, vpad + 4.5 * vh);
+  ctx.fillText("汉  界", pad + 6.5 * cell, vpad + 4.5 * vh);
+  // 坐标提示
+  ctx.font = `${cell * 0.3}px monospace`; ctx.fillStyle = "rgba(90,68,32,.6)";
+  for (let x = 0; x < cols; x++) ctx.fillText(x, pad + x * cell, W - pad * 0.35);
+
+  let last = null;
+  if (lastMove && /^\d{4}$/.test(lastMove))
+    last = {x1: +lastMove[0], y1: +lastMove[1], x2: +lastMove[2], y2: +lastMove[3]};
+  if (last) {
+    ctx.strokeStyle = "#ff5a5a"; ctx.lineWidth = 2;
+    ctx.strokeRect(pad + last.x2 * cell - cell * .5, vpad + last.y2 * vh - cell * .5,
+                   cell, cell);
+    ctx.lineWidth = 1; ctx.strokeStyle = "#5a4420";
+  }
+  const pr = cell * 0.44;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const p = snap.board[y][x];
+    if (!p) continue;
+    const red = p === p.toUpperCase();
+    ctx.beginPath(); ctx.arc(pad + x * cell, vpad + y * vh, pr, 0, 7);
+    ctx.fillStyle = "#f3e2c0"; ctx.fill();
+    ctx.strokeStyle = red ? "#b03030" : "#20408a"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = red ? "#b03030" : "#20408a";
+    ctx.font = `bold ${pr}px "Microsoft YaHei", serif`;
+    ctx.fillText(XQ_NAMES[p] || "?", pad + x * cell, vpad + y * vh + 1);
+    ctx.lineWidth = 1; ctx.strokeStyle = "#5a4420";
+  }
+}
+
+// ============================ 实时对战 ============================
+let ws = null, liveMoves = [];
+
+function engineOptions(sel, hintEl) {
+  fetch("/api/engines").then(r => r.json()).then(engines => {
+    sel.innerHTML = "";
+    const optRandom = document.createElement("option");
+    optRandom.value = "random"; optRandom.textContent = "随机棋手(调试)";
+    sel.appendChild(optRandom);
+    let firstAvailable = null;
+    for (const [key, e] of Object.entries(engines)) {
+      const o = document.createElement("option");
+      o.value = key; o.textContent = e.label + (e.available ? "" : "(未配Key)");
+      if (e.available && !firstAvailable) firstAvailable = key;
+      sel.appendChild(o);
+    }
+    sel.value = firstAvailable || "random";
+    const missing = Object.values(engines).filter(e => !e.available).map(e => e.label);
+    hintEl.textContent = missing.length
+      ? "未配置 Key 的引擎:" + missing.join(",") + "(服务端 .env 填好后重启)"
+      : "";
+  });
+}
+engineOptions($("p1"), $("engine-hint"));
+engineOptions($("p2"), $("engine-hint"));
+
+function gameConfig() {
+  const v = $("game-sel").value;
+  if (v === "go") return {game: "go", options: {size: 19}, sides: ["B", "W"],
+                          labels: ["黑方引擎", "白方引擎"]};
+  if (v === "go9") return {game: "go", options: {size: 9}, sides: ["B", "W"],
+                           labels: ["黑方引擎", "白方引擎"]};
+  return {game: "xiangqi", options: {}, sides: ["red", "black"],
+          labels: ["红方引擎", "黑方引擎"]};
+}
+$("game-sel").addEventListener("change", () => {
+  const cfg = gameConfig();
+  $("p1-label").textContent = cfg.labels[0];
+  $("p2-label").textContent = cfg.labels[1];
+});
+
+$("btn-start").addEventListener("click", () => {
+  const cfg = gameConfig();
+  logClear();
+  log("—— 对局开始 ——", "sys");
+  wsSend({type: "start", game: cfg.game, options: cfg.options,
+          players: {[cfg.sides[0]]: $("p1").value, [cfg.sides[1]]: $("p2").value}});
+  $("btn-start").disabled = true;
+  setStatus("thinking", "准备中…");
+});
+
+function wsSend(obj) {
+  if (!ws || ws.readyState > 1) {
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+    ws.onmessage = e => handleMsg(JSON.parse(e.data));
+    ws.onopen = () => ws.send(JSON.stringify(obj));
+  } else ws.send(JSON.stringify(obj));
+}
+
+function setStatus(cls, text) {
+  $("status-badge").className = "badge" + (cls ? " " + cls : "");
+  $("status-badge").textContent = cls === "thinking" ? "进行中" :
+      cls === "over" ? "已结束" : "待开局";
+  $("status-text").textContent = text;
+}
+function logClear() { $("movelog").innerHTML = ""; liveMoves = []; }
+function log(html, cls) {
+  const d = document.createElement("div");
+  if (cls) d.className = cls;
+  d.innerHTML = html;
+  $("movelog").appendChild(d);
+  $("movelog").scrollTop = 1e9;
+}
+
+function handleMsg(m) {
+  if (m.type === "start") {
+    drawSnap($("board"), m.snapshot, null);
+  } else if (m.type === "thinking") {
+    setStatus("thinking", `${m.player} 思考中…`);
+  } else if (m.type === "raw") {
+    // 原始输出太长,不进主日志
+  } else if (m.type === "illegal") {
+    log(`<span class="illegal">非法着法 ${m.move || "(无法解析)"}:${m.why}</span>`, "");
+  } else if (m.type === "log") {
+    log(m.text, "sys");
+  } else if (m.type === "move") {
+    liveMoves.push(m);
+    const cap = m.captured ? ` 吃${m.captured}子` : "";
+    const note = m.note ? ` 【${m.note}】` : "";
+    log(`第${m.no}手 <b>${m.player}</b>(${m.side_display}) ${m.move_display}${cap}` +
+        (m.reason ? ` — ${escapeHtml(m.reason)}` : "") + note, "mv");
+    drawSnap($("board"), m.snapshot, m.move);
+  } else if (m.type === "end") {
+    setStatus("over", "");
+    $("result-line").textContent = `终局:${m.result}` +
+      (m.end_comment ? ` — ${m.end_comment}` : "");
+    log(`<b>终局:${m.result}</b>`, "mv");
+    $("btn-start").disabled = false;
+  } else if (m.type === "saved") {
+    log("对局档案已保存,可在「复盘」页回放。", "sys");
+  } else if (m.type === "error") {
+    log(`<span class="illegal">错误:${m.text}</span>`, "");
+    setStatus("", "");
+    $("btn-start").disabled = false;
+  }
+}
+function escapeHtml(s) { const d = document.createElement("div");
+  d.textContent = s || ""; return d.innerHTML; }
+
+function drawSnap(canvas, snap, lastMove) {
+  if (!snap) return;
+  if (snap.game === "go") drawGo(canvas, snap, lastMove);
+  else drawXiangqi(canvas, snap, lastMove);
+}
+
+// ============================ 复盘回放 ============================
+let rp = {frames: [], moves: [], idx: 0, timer: null};
+
+function loadGameList() {
+  fetch("/api/games").then(r => r.json()).then(list => {
+    const el = $("gamelist"); el.innerHTML = "";
+    if (!list.length) { el.innerHTML = '<div class="muted">还没有对局档案,先去「对战」页跑一局吧。</div>'; return; }
+    list.forEach(g => {
+      const d = document.createElement("div");
+      d.innerHTML = `<span>${g.display_name} · ${g.id.slice(0, 15)}</span>
+        <span class="res">${g.result || ""}</span>`;
+      d.addEventListener("click", () => {
+        el.querySelectorAll("div").forEach(x => x.classList.remove("sel"));
+        d.classList.add("sel");
+        openReplay(g.id);
+      });
+      el.appendChild(d);
+    });
+  });
+}
+
+function openReplay(id) {
+  fetch(`/api/games/${id}/frames`).then(r => r.json()).then(data => {
+    rp.frames = data.frames; rp.moves = data.moves; rp.idx = rp.frames.length - 1;
+    $("rp-slider").max = rp.frames.length - 1;
+    $("rp-result").textContent = `结果:${data.result}` +
+      (data.end_comment ? ` — ${data.end_comment}` : "");
+    showFrame(rp.idx);
+  });
+}
+
+function showFrame(i) {
+  if (!rp.frames.length) return;
+  rp.idx = Math.max(0, Math.min(i, rp.frames.length - 1));
+  $("rp-slider").value = rp.idx;
+  $("rp-pos").textContent = `${rp.idx}/${rp.frames.length - 1}`;
+  drawSnap($("rboard"), rp.frames[rp.idx],
+           rp.idx > 0 ? (rp.moves[rp.idx - 1] || {}).move : null);
+  const m = rp.moves[rp.idx - 1];
+  $("moverep").textContent = m
+    ? `第${m.no}手 ${m.player} ${m.move_display}${m.captured ? " 吃" + m.captured + "子" : ""}${m.reason ? " — " + m.reason : ""}`
+    : "开局";
+}
+$("rp-slider").addEventListener("input", e => { stopAuto(); showFrame(+e.target.value); });
+$("rp-first").addEventListener("click", () => { stopAuto(); showFrame(0); });
+$("rp-last").addEventListener("click", () => { stopAuto(); showFrame(rp.frames.length - 1); });
+$("rp-prev").addEventListener("click", () => { stopAuto(); showFrame(rp.idx - 1); });
+$("rp-next").addEventListener("click", () => { stopAuto(); showFrame(rp.idx + 1); });
+function stopAuto() { if (rp.timer) { clearInterval(rp.timer); rp.timer = null;
+  $("rp-auto").textContent = "自动播放"; } }
+$("rp-auto").addEventListener("click", () => {
+  if (rp.timer) return stopAuto();
+  $("rp-auto").textContent = "暂停";
+  rp.timer = setInterval(() => {
+    if (rp.idx >= rp.frames.length - 1) return stopAuto();
+    showFrame(rp.idx + 1);
+  }, 700);
+});
+
+// ============================ 战绩榜 ============================
+function loadStats() {
+  fetch("/api/stats").then(r => r.json()).then(s => {
+    $("stats-title").textContent =
+      `战绩榜(共 ${s.total_games} 局,更新于 ${s.updated.replace("T", " ")})`;
+    const tb = $("stats-table").querySelector("tbody");
+    tb.innerHTML = "";
+    s.players.forEach(e => {
+      const rate = e.win_rate === null ? "-" : Math.round(e.win_rate * 100) + "%";
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${e.player}</td><td>${e.games}</td><td>${e.wins}</td>
+        <td>${e.losses}</td><td>${e.draws}</td><td>${e.points}</td><td>${rate}</td>`;
+      tb.appendChild(tr);
+    });
+    if (!s.players.length)
+      tb.innerHTML = '<tr><td colspan="7" class="muted">还没有对局记录</td></tr>';
+  });
+}
+
+// 默认画一个空围棋盘
+drawSnap($("board"), {game: "go", size: 19,
+  grid: Array.from({length: 19}, () => ".".repeat(19)),
+  captures: {B: 0, W: 0}, komi: 6.5}, null);
+</script>
+</body>
+</html>

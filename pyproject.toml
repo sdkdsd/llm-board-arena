@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-board-arena"
+version = "0.1.0"
+description = "LLM 棋类竞技场:让大模型(GLM / DeepSeek / 任意 OpenAI 兼容模型)对弈围棋与中国象棋,带实时观战、复盘回放与战绩榜。"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "llm-board-arena contributors" }]
+keywords = ["llm", "go", "baduk", "weiqi", "xiangqi", "chess", "arena", "deepseek", "glm"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Games/Entertainment :: Board Games",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "requests>=2.28",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+board-arena = "board_arena.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+board_arena = ["web/*.html"]

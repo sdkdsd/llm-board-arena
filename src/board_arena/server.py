@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import threading
+from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -39,7 +40,7 @@ def create_app(data_dir: str = DEFAULT_DATA_DIR,
         return available_engines()
 
     @app.get("/api/games")
-    async def games(game: str | None = None, limit: int = 50):
+    async def games(game: Optional[str] = None, limit: int = 50):
         rs = load_records(data_dir, game)[:limit]
         for r in rs:
             r.pop("sgf", None)
